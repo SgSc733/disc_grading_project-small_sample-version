@@ -13,9 +13,7 @@ from src.clustering_utils import *
 from config import *
 
 def parse_args():
-    """
-    解析命令行参数
-    """
+
     parser = argparse.ArgumentParser(description='椎间盘分级系统设计')
     parser.add_argument(
         '--input', 
@@ -32,16 +30,13 @@ def parse_args():
     return parser.parse_args()
 
 def main():
-    """
-    主函数 - 执行完整的分级系统设计流程
-    """
+
     args = parse_args()
     
     print("=" * 80)
     print("椎间盘分级系统设计")
     print("=" * 80)
     
-    # 1. 数据加载
     print("\n[步骤1] 数据加载")
     if args.input:
         print(f"加载指定文件: {args.input}")
@@ -53,19 +48,15 @@ def main():
         
         print(f"成功加载数据: {df.shape[0]} 个样本, {df.shape[1]} 个特征")
         
-        # 显示数据基本信息
         print(f"\n椎间盘水平分布:")
         print(df['Disc_Level'].value_counts())
     
-    # 2. 数据预处理
     print("\n[步骤2] 数据预处理")
     
-    # 2.1 按椎间盘水平分组（可选）
     print("是否按椎间盘水平分别处理? (y/n): ", end='')
     group_by_disc = input().strip().lower() == 'y'
     
     if group_by_disc:
-        # 选择要处理的椎间盘水平
         print(f"可用的椎间盘水平: {df['Disc_Level'].unique().tolist()}")
         print("请输入要处理的椎间盘水平 (例如: L4-L5): ", end='')
         selected_disc = input().strip()
@@ -74,14 +65,12 @@ def main():
             print(f"错误: 未找到椎间盘水平 '{selected_disc}'")
             return
         
-        # 筛选数据
         df_filtered = df[df['Disc_Level'] == selected_disc].copy()
         print(f"已选择 {selected_disc}，包含 {len(df_filtered)} 个样本")
     else:
         df_filtered = df.copy()
         print("处理所有椎间盘水平的数据")
     
-    # 2.2 特征标准化
     print(f"\n执行特征标准化 (方法: {STANDARDIZATION_METHOD})...")
     df_standardized, scaler, feature_columns = standardize_features(
         df_filtered, 
@@ -89,7 +78,6 @@ def main():
     )
     print(f"已标准化 {len(feature_columns)} 个特征")
     
-    # 3. PCA降维
     print(f"\n[步骤3] PCA降维 (降至 {PCA_N_COMPONENTS} 维)")
     df_pca, pca_model = apply_pca(
         df_standardized, 
@@ -97,22 +85,17 @@ def main():
         n_components=PCA_N_COMPONENTS
     )
     
-    # 显示方差贡献率
     variance_ratio = pca_model.explained_variance_ratio_
     cumsum_ratio = np.cumsum(variance_ratio)
     print(f"各主成分方差贡献率: {variance_ratio}")
     print(f"累积方差贡献率: {cumsum_ratio}")
     
-    # 保存处理后的数据
     save_processed_data(df_pca)
     
-    # 4. 层次聚类
     print(f"\n[步骤4] 层次聚类 (方法: {CLUSTERING_METHOD}, 距离: {CLUSTERING_METRIC})")
         
-    # 获取PCA特征列
     pca_feature_columns = [col for col in df_pca.columns if col.startswith('PC')]
         
-    # 执行聚类
     linkage_matrix, X_pca = perform_hierarchical_clustering(
         df_pca, 
         pca_feature_columns,
@@ -120,7 +103,6 @@ def main():
         metric=CLUSTERING_METRIC
     )
         
-    # 5. 确定聚类数量
     print("\n[步骤5] 确定聚类数量")
     print("请选择聚类数量确定方式:")
     print("  1. 自动确定（使用肘部法则）")
@@ -133,19 +115,17 @@ def main():
         print("无效输入，请输入 1 或 2")
         
     if choice == '1':
-        # 自动确定聚类数量
         print("\n使用肘部法则自动确定最佳聚类数量...")
         optimal_clusters = find_optimal_clusters_elbow(
             linkage_matrix, 
             X_pca,
-            max_clusters=min(10, len(df_pca) // 5),  # 最大聚类数不超过样本数的1/5
+            max_clusters=min(10, len(df_pca) // 5),
             plot=True
         )
         n_clusters_to_use = optimal_clusters
         print(f"\n自动确定的聚类数量: {n_clusters_to_use}")
             
     else:
-        # 手动指定聚类数量
         print(f"\n默认聚类数量: {N_CLUSTERS}")
         print(f"有效范围: 2 到 {min(10, len(df_pca)-1)}")
             
@@ -168,7 +148,6 @@ def main():
         
         print(f"\n使用手动指定的聚类数量: {n_clusters_to_use}")
 
-    # 6. 分配聚类标签
     print(f"\n[步骤6] 分配聚类标签 (聚类数: {n_clusters_to_use})")
     
     dendrogram_path = os.path.join(FIGURES_DIR, DENDROGRAM_FILE)
@@ -181,42 +160,31 @@ def main():
     
     clusters = assign_clusters(linkage_matrix, n_clusters=n_clusters_to_use)
 
-    # 7. 等级排序
     print("\n[步骤7] 基于距离的等级排序")
     
-    # 计算聚类中心
     centers = calculate_cluster_centers(X_pca, clusters)
     
-    # 对聚类进行排序
     grade_mapping, distances = rank_clusters_by_distance(centers)
     
-    # 显示排序结果
     print("\n聚类到等级的映射:")
     for cluster, grade in sorted(grade_mapping.items(), key=lambda x: x[1]):
         print(f"  聚类 {cluster} -> 等级 {grade} (距离: {distances[cluster]:.4f})")
     
-    # 转换聚类标签为等级
     grades = np.array([grade_mapping[c] for c in clusters])
     
-    # 8. 可视化
     print("\n[步骤8] 生成可视化结果")
     
-    # PCA散点图
     pca_scatter_path = os.path.join(FIGURES_DIR, PCA_SCATTER_FILE)
     plot_pca_scatter(df_pca, grades, save_path=pca_scatter_path)
     
-    # 9. 保存结果
     print("\n[步骤9] 保存分级结果")
     
-    # 保存分级结果
     results_df = save_grading_results(df_pca, clusters, grade_mapping)
     
-    # 生成等级解释表
     if len(feature_columns) > 0:
-        # 对于标准化后的特征，生成解释
         interpretation_df = generate_grade_interpretation(
             df_standardized, 
-            feature_columns[:5],  # 只显示前5个特征的统计
+            feature_columns[:5],
             grades
         )
         
@@ -224,7 +192,6 @@ def main():
         interpretation_df.to_csv(interpretation_path, index=False)
         print(f"等级解释表已保存到: {interpretation_path}")
     
-    # 10. 生成分析报告
     print("\n[步骤10] 生成分析报告")
         
     report_content = f"""
@@ -255,7 +222,6 @@ def main():
 5. 等级分配结果
 """
     
-    # 添加每个等级的统计信息
     for grade in sorted(np.unique(grades)):
         count = np.sum(grades == grade)
         samples = results_df[results_df['Grade'] == grade]['Sample_ID'].tolist()
@@ -280,7 +246,6 @@ def main():
         f.write(report_content)
     print(f"分析报告已保存到: {report_path}")
     
-    # 保存分析参数（用于重现）
     params = {
         'standardization_method': STANDARDIZATION_METHOD,
         'pca_n_components': PCA_N_COMPONENTS,
@@ -300,7 +265,6 @@ def main():
     print("分级系统设计完成！")
     print("=" * 80)
     
-    # 询问是否打开结果目录
     print("\n是否打开结果目录? (y/n): ", end='')
     if input().strip().lower() == 'y':
         import subprocess
