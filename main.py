@@ -13,70 +13,193 @@ from src.clustering_utils import *
 from config import *
 
 def parse_args():
-
+    import os
+    
     parser = argparse.ArgumentParser(description='椎间盘分级系统设计')
+    
+    raw_features_file = None
+    robust_list_file = None
+    clinical_file = None
+    
+    if os.path.exists('data/raw'):
+        csv_files = [f for f in os.listdir('data/raw') if f.endswith('.csv')]
+        print(f"在 data/raw 目录找到 {len(csv_files)} 个CSV文件")
+        
+        for f in csv_files:
+            full_path = os.path.join('data/raw', f)
+            file_lower = f.lower()
+            
+            if 'robust' in file_lower:
+                robust_list_file = full_path
+                print(f"  - 识别为稳健特征清单: {f}")
+            elif 'clinical' in file_lower:
+                clinical_file = full_path
+                print(f"  - 识别为临床数据文件: {f}")
+            elif not raw_features_file:
+                raw_features_file = full_path
+                print(f"  - 识别为原始特征文件: {f}")
+        
+        potential_raw_files = []
+        for f in csv_files:
+            file_lower = f.lower()
+            if 'robust' not in file_lower and 'clinical' not in file_lower:
+                potential_raw_files.append(os.path.join('data/raw', f))
+        
+        if potential_raw_files:
+            raw_features_file = max(potential_raw_files, key=lambda x: os.path.getsize(x))
+            print(f"  - 选择最大文件作为原始特征文件: {os.path.basename(raw_features_file)}")
+    
     parser.add_argument(
-        '--input', 
-        type=str, 
-        default=None,
-        help='指定输入CSV文件路径（默认从data/raw目录自动读取）'
+        '--raw-features',
+        type=str,
+        required=False,
+        default=raw_features_file,
+        help='指定包含所有特征的原始CSV文件路径'
     )
     parser.add_argument(
-        '--output-dir', 
-        type=str, 
+        '--robust-list',
+        type=str,
+        required=False,
+        default=robust_list_file,
+        help='指定稳健特征清单CSV文件路径'
+    )
+    parser.add_argument(
+        '--clinical-data',
+        type=str,
+        required=False,
+        default=clinical_file,
+        help='指定临床数据CSV文件路径（可选）'
+    )
+    parser.add_argument(
+        '--clinical-col',
+        type=str,
+        default='VAS_Score',
+        help='用于临床排序的列名'
+    )
+    parser.add_argument(
+        '--use-clinical',
+        action='store_true',
+        help='是否使用临床数据进行等级排序'
+    )
+    parser.add_argument(
+        '--output-dir',
+        type=str,
         default=None,
         help='指定输出目录（默认为results）'
     )
-    return parser.parse_args()
+    
+    args = parser.parse_args()
+    
+    if not args.raw_features or not os.path.exists(args.raw_features):
+        print("\n错误：找不到原始特征文件！")
+        print("请确保在 data/raw/ 目录中有CSV文件")
+        print("或使用命令行参数: --raw-features <文件路径>")
+        sys.exit(1)
+    
+    if not args.robust_list or not os.path.exists(args.robust_list):
+        print("\n错误：找不到稳健特征清单文件！")
+        print("请确保在 data/raw/ 目录中有包含'robust'的CSV文件")
+        print("或使用命令行参数: --robust-list <文件路径>")
+        sys.exit(1)
+    
+    print(f"\n使用的文件：")
+    print(f"  原始特征: {os.path.basename(args.raw_features)}")
+    print(f"  稳健清单: {os.path.basename(args.robust_list)}")
+    
+    if args.clinical_data and os.path.exists(args.clinical_data):
+        print(f"  临床数据: {os.path.basename(args.clinical_data)}")
+    else:
+        if args.clinical_data:
+            print(f"  临床数据: 未找到文件 {args.clinical_data}")
+        else:
+            print(f"  临床数据: 未提供")
+    
+    print("-" * 80)
+    
+    return args
 
 def main():
-
     args = parse_args()
     
     print("=" * 80)
     print("椎间盘分级系统设计")
     print("=" * 80)
     
-    print("\n[步骤1] 数据加载")
-    if args.input:
-        print(f"加载指定文件: {args.input}")
-        df = load_features(args.input)
-    else:
-        print(f"从 {RAW_DATA_DIR} 目录自动加载特征文件...")
+    print("\n[步骤1] 数据加载与特征筛选")
+    
+    from src.data_utils import load_and_filter_features
+    df = load_and_filter_features(args.raw_features, args.robust_list, args.clinical_data)
+    
+    print(f"成功加载数据: {df.shape[0]} 个样本, {df.shape[1]} 列")
+    
 
-        df = load_features()
-        
-        print(f"成功加载数据: {df.shape[0]} 个样本, {df.shape[1]} 个特征")
-        
-        print(f"\n椎间盘水平分布:")
-        print(df['Disc_Level'].value_counts())
+    clinical_columns = ['VAS_Score', 'ODI_Score', 'ODI_Index', 'Pain_Score', 
+                    'JOA_Score', 'Clinical_Score']
+    available_clinical = [col for col in clinical_columns if col in df.columns]
+    if available_clinical:
+        print(f"检测到临床数据列: {', '.join(available_clinical)}")
+        if args.use_clinical:
+            print(f"将使用 '{args.clinical_col}' 进行临床验证和排序")
+    
+    print(f"\n椎间盘水平分布:")
+    print(df['Disc_Level'].value_counts())
     
     print("\n[步骤2] 数据预处理")
     
-    print("是否按椎间盘水平分别处理? (y/n): ", end='')
-    group_by_disc = input().strip().lower() == 'y'
-    
-    if group_by_disc:
-        print(f"可用的椎间盘水平: {df['Disc_Level'].unique().tolist()}")
-        print("请输入要处理的椎间盘水平 (例如: L4-L5): ", end='')
-        selected_disc = input().strip()
+    unique_disc_levels = df['Disc_Level'].unique()
+    group_by_disc = False
+
+    if len(unique_disc_levels) > 1:
+        print("是否按椎间盘水平分别处理? (y/n): ", end='')
+        group_by_disc = input().strip().lower() == 'y'
         
-        if selected_disc not in df['Disc_Level'].values:
-            print(f"错误: 未找到椎间盘水平 '{selected_disc}'")
-            return
-        
-        df_filtered = df[df['Disc_Level'] == selected_disc].copy()
-        print(f"已选择 {selected_disc}，包含 {len(df_filtered)} 个样本")
+        if group_by_disc:
+            print(f"可用的椎间盘水平: {unique_disc_levels.tolist()}")
+            print("请输入要处理的椎间盘水平 (例如: L4-L5): ", end='')
+            selected_disc = input().strip()
+            
+            if selected_disc not in df['Disc_Level'].values:
+                print(f"错误: 未找到椎间盘水平 '{selected_disc}'")
+                return
+            
+            df_filtered = df[df['Disc_Level'] == selected_disc].copy()
+            print(f"已选择 {selected_disc}，包含 {len(df_filtered)} 个样本")
+        else:
+            df_filtered = df.copy()
+            print("处理所有椎间盘水平的数据")
     else:
         df_filtered = df.copy()
-        print("处理所有椎间盘水平的数据")
+        print(f"处理所有样本数据 (共 {len(df_filtered)} 个样本)")
     
-    print(f"\n执行特征标准化 (方法: {STANDARDIZATION_METHOD})...")
-    df_standardized, scaler, feature_columns = standardize_features(
-        df_filtered, 
-        method=STANDARDIZATION_METHOD
-    )
-    print(f"已标准化 {len(feature_columns)} 个特征")
+    print(f"\n执行多视角特征标准化 (方法: {STANDARDIZATION_METHOD})...")
+
+    non_feature_cols = ['Sample_ID', 'Disc_Level', 'Patient_ID']
+    feature_columns = [col for col in df_filtered.columns if col not in non_feature_cols]
+
+    from src.data_utils import group_features_by_type
+    feature_groups = group_features_by_type(feature_columns)
+
+    df_standardized = df_filtered.copy()
+    scalers = {}
+
+    for group_name, group_features in feature_groups.items():
+        if group_name != 'all' and len(group_features) > 0:
+            print(f"  标准化 {group_name} 特征组 ({len(group_features)} 个特征)")
+            
+            if STANDARDIZATION_METHOD == 'robust':
+                from sklearn.preprocessing import RobustScaler
+                scaler = RobustScaler()
+            elif STANDARDIZATION_METHOD == 'zscore':
+                from sklearn.preprocessing import StandardScaler
+                scaler = StandardScaler()
+            else:
+                from sklearn.preprocessing import MinMaxScaler
+                scaler = MinMaxScaler()
+                
+            df_standardized[group_features] = scaler.fit_transform(df_filtered[group_features])
+            scalers[group_name] = scaler
+
+    print(f"已完成多视角标准化，共处理 {len(feature_columns)} 个特征")
     
     print(f"\n[步骤3] PCA降维 (降至 {PCA_N_COMPONENTS} 维)")
     df_pca, pca_model = apply_pca(
@@ -160,15 +283,41 @@ def main():
     
     clusters = assign_clusters(linkage_matrix, n_clusters=n_clusters_to_use)
 
-    print("\n[步骤7] 基于距离的等级排序")
+    print("\n[步骤7] 等级排序")
     
-    centers = calculate_cluster_centers(X_pca, clusters)
+    df_with_clusters = df_filtered.copy()
+    df_with_clusters['Cluster'] = clusters
     
-    grade_mapping, distances = rank_clusters_by_distance(centers)
+    for col in df_pca.columns:
+        if col not in ['Sample_ID', 'Disc_Level']:
+            df_with_clusters[col] = df_pca[col].values
     
-    print("\n聚类到等级的映射:")
-    for cluster, grade in sorted(grade_mapping.items(), key=lambda x: x[1]):
-        print(f"  聚类 {cluster} -> 等级 {grade} (距离: {distances[cluster]:.4f})")
+    from src.clustering_utils import rank_clusters_clinically
+    
+    clinical_columns = ['Pain_Score', 'ODI_Score', 'VAS_Score', 'JOA_Score']
+    available_clinical = [col for col in clinical_columns if col in df_with_clusters.columns]
+    
+    if available_clinical and args.use_clinical:
+        clinical_col_to_use = args.clinical_col if args.clinical_col in available_clinical else available_clinical[0]
+        print(f"检测到临床数据，使用 '{clinical_col_to_use}' 进行排序...")
+        grade_mapping, cluster_stats = rank_clusters_clinically(
+            df_with_clusters,
+            cluster_col='Cluster',
+            clinical_col=clinical_col_to_use,
+            use_clinical=True
+        )
+    else:
+        if not available_clinical:
+            print("未检测到临床数据，使用PC1位置进行排序...")
+        else:
+            print("检测到临床数据但未启用，使用PC1位置进行排序...")
+        
+        grade_mapping, cluster_stats = rank_clusters_clinically(
+            df_with_clusters,
+            cluster_col='Cluster',
+            clinical_col=None,
+            use_clinical=False
+        )
     
     grades = np.array([grade_mapping[c] for c in clusters])
     
