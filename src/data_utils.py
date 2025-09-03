@@ -8,6 +8,105 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import *
 
 
+def load_and_filter_features(raw_features_path, robust_features_list_path, clinical_data_path=None):
+
+    print(f"  - 正在加载原始特征总表: {os.path.basename(raw_features_path)}")
+    try:
+        df_raw = pd.read_csv(raw_features_path, encoding='utf-8')
+    except UnicodeDecodeError:
+        try:
+            df_raw = pd.read_csv(raw_features_path, encoding='gbk')
+        except:
+            df_raw = pd.read_csv(raw_features_path, encoding='latin1')
+    
+    id_col_name = df_raw.columns[0]
+    print(f"  - 识别样本ID列: '{id_col_name}'")
+    
+    df_raw = df_raw.rename(columns={id_col_name: 'Sample_ID'})
+    
+    if 'Disc_Level' not in df_raw.columns:
+        df_raw['Disc_Level'] = 'L4-L5'
+        print(f"  - 添加默认Disc_Level列（用于兼容）")
+
+    print(f"  - 正在加载稳健特征清单: {os.path.basename(robust_features_list_path)}")
+    df_robust_list = pd.read_csv(robust_features_list_path)
+
+    if 'feature' not in df_robust_list.columns:
+        raise ValueError("稳健特征清单文件中必须包含名为 'feature' 的列。")
+    
+    robust_feature_names = df_robust_list['feature'].tolist()
+    
+    final_columns_to_keep = ['Sample_ID', 'Disc_Level']
+    
+    missing_features = []
+    found_features = []
+    for feature in robust_feature_names:
+        if feature in df_raw.columns:
+            final_columns_to_keep.append(feature)
+            found_features.append(feature)
+        else:
+            missing_features.append(feature)
+    
+    if missing_features:
+        print(f"\n警告: 在原始特征总表中找不到以下 {len(missing_features)} 个稳健特征:")
+        print(f"  {', '.join(missing_features[:5])}{'...' if len(missing_features) > 5 else ''}")
+    
+    print(f"\n  - 成功匹配 {len(found_features)} / {len(robust_feature_names)} 个稳健特征。")
+    
+    df_filtered = df_raw[final_columns_to_keep].copy()
+    
+    if clinical_data_path and os.path.exists(clinical_data_path):
+        print(f"\n  - 正在加载临床数据: {os.path.basename(clinical_data_path)}")
+        try:
+            df_clinical = pd.read_csv(clinical_data_path, encoding='utf-8')
+        except UnicodeDecodeError:
+            try:
+                df_clinical = pd.read_csv(clinical_data_path, encoding='gbk')
+            except:
+                df_clinical = pd.read_csv(clinical_data_path, encoding='latin1')
+        
+        clinical_id_col = df_clinical.columns[0]
+        print(f"  - 临床数据ID列: '{clinical_id_col}'")
+        
+        df_clinical = df_clinical.rename(columns={clinical_id_col: 'Sample_ID'})
+        
+        clinical_numeric_cols = []
+        for col in df_clinical.columns:
+            if col != 'Sample_ID':
+                try:
+                    df_clinical[col] = pd.to_numeric(df_clinical[col], errors='coerce')
+                    if df_clinical[col].notna().sum() > 0:
+                        clinical_numeric_cols.append(col)
+                except:
+                    pass
+        
+        if clinical_numeric_cols:
+            print(f"  - 检测到数值型临床特征: {', '.join(clinical_numeric_cols)}")
+            
+            df_merged = pd.merge(df_filtered, 
+                                df_clinical[['Sample_ID'] + clinical_numeric_cols], 
+                                on='Sample_ID', 
+                                how='left')
+            
+            matched_samples = df_merged[clinical_numeric_cols[0]].notna().sum()
+            print(f"  - 成功匹配 {matched_samples}/{len(df_filtered)} 个样本的临床数据")
+            
+            df_filtered = df_merged
+        else:
+            print("  - 警告: 临床数据文件中未找到有效的数值型特征")
+    
+    print(f"\n最终数据框架:")
+    print(f"  - 样本数: {len(df_filtered)}")
+    print(f"  - 总列数: {len(df_filtered.columns)}")
+    print(f"  - 稳健特征数: {len(found_features)}")
+    
+    potential_clinical_cols = ['VAS_Score', 'ODI_Score', 'ODI_Index', 'Pain_Score', 'JOA_Score']
+    available_clinical = [col for col in potential_clinical_cols if col in df_filtered.columns]
+    if available_clinical:
+        print(f"  - 可用临床指标: {', '.join(available_clinical)}")
+    
+    return df_filtered
+
 def load_features(file_path=None):
 
     if file_path is None:
@@ -22,39 +121,14 @@ def load_features(file_path=None):
         if len(csv_files) == 0:
             raise FileNotFoundError(
                 f"在 {raw_data_dir} 目录中未找到CSV文件。\n"
-                f"请将特征文件（如 final_robust_features.csv）放置在该目录中。"
+                f"请将特征文件放置在该目录中。"
             )
-        elif len(csv_files) > 1:
-            print(f"在 {raw_data_dir} 中发现多个CSV文件:")
-            for i, f in enumerate(csv_files, 1):
-                print(f"  {i}. {f}")
-            print(f"警告: 发现多个CSV文件，将使用第一个文件: {csv_files[0]}")
-            print("建议: 请确保 data/raw 目录中只有一个待处理的CSV文件\n")
-            file_path = os.path.join(raw_data_dir, csv_files[0])
-        else:
-            file_path = os.path.join(raw_data_dir, csv_files[0])
-            print(f"自动加载文件: {csv_files[0]}")
+        file_path = os.path.join(raw_data_dir, csv_files[0])
     
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"文件不存在: {file_path}")
-    
-    try:
-        df = pd.read_csv(file_path, encoding='utf-8')
-    except UnicodeDecodeError:
-        try:
-            df = pd.read_csv(file_path, encoding='gbk')
-        except:
-            df = pd.read_csv(file_path, encoding='latin1')
-    
-    required_columns = ['Sample_ID', 'Disc_Level']
-    for col in required_columns:
-        if col not in df.columns:
-            raise ValueError(f"缺少必要的列: {col}")
-    
+    df = pd.read_csv(file_path)
     return df
 
 def group_by_disc_level(df):
-
     grouped_data = {}
     for disc_level in DISC_GROUPS:
         mask = df['Disc_Level'] == disc_level
@@ -64,25 +138,29 @@ def group_by_disc_level(df):
 
 def group_features_by_type(feature_columns):
 
-    shape_cols = [col for col in feature_columns if col.startswith('firstorder_')]
-    intensity_cols = [col for col in feature_columns if 'firstorder_' in col or 'glcm_' in col or 'gldm_' in col or 'glrlm_' in col or 'glszm_' in col or 'ngtdm_' in col]
-    texture_cols = [col for col in feature_columns if any(x in col for x in ['glcm_', 'gldm_', 'glrlm_', 'glszm_', 'ngtdm_'])]
+    shape_cols = [col for col in feature_columns if col.startswith('shape_')]
+    firstorder_cols = [col for col in feature_columns if col.startswith('firstorder_')]
+    glcm_cols = [col for col in feature_columns if col.startswith('glcm_')]
+    gldm_cols = [col for col in feature_columns if col.startswith('gldm_')]
+    glrlm_cols = [col for col in feature_columns if col.startswith('glrlm_')]
+    glszm_cols = [col for col in feature_columns if col.startswith('glszm_')]
+    ngtdm_cols = [col for col in feature_columns if col.startswith('ngtdm_')]
     
-    shape_cols = [col for col in feature_columns if 'shape_' in col.lower()]
-    intensity_cols = [col for col in feature_columns if 'firstorder_' in col.lower()]
-    texture_cols = [col for col in feature_columns if any(x in col.lower() for x in ['glcm_', 'gldm_', 'glrlm_', 'glszm_', 'ngtdm_'])]
+    texture_cols = glcm_cols + gldm_cols + glrlm_cols + glszm_cols + ngtdm_cols
     
     return {
         'shape': shape_cols,
-        'intensity': intensity_cols,
+        'firstorder': firstorder_cols,
         'texture': texture_cols,
         'all': feature_columns
     }
 
 def standardize_features(df, method='zscore', feature_columns=None):
-
     if feature_columns is None:
-        non_feature_cols = ['Sample_ID', 'Disc_Level', 'Patient_ID']
+        non_feature_cols = ['Sample_ID', 'Disc_Level', 'Patient_ID', 
+                        'VAS_Score', 'ODI_Score', 'ODI_Index', 'Pain_Score', 
+                        'JOA_Score', 'Clinical_Score']
+        non_feature_cols = [col for col in non_feature_cols if col in df.columns]
         feature_columns = [col for col in df.columns if col not in non_feature_cols]
     
     df_standardized = df.copy()
@@ -101,7 +179,6 @@ def standardize_features(df, method='zscore', feature_columns=None):
     return df_standardized, scaler, feature_columns
 
 def apply_pca(df, feature_columns, n_components=2):
-
     pca = PCA(n_components=n_components)
     pca_features = pca.fit_transform(df[feature_columns])
     
@@ -113,7 +190,6 @@ def apply_pca(df, feature_columns, n_components=2):
     return result_df, pca
 
 def apply_pca_adaptive(df, feature_columns, variance_threshold=0.95):
-
     pca_full = PCA()
     pca_full.fit(df[feature_columns])
     
@@ -127,7 +203,6 @@ def apply_pca_adaptive(df, feature_columns, variance_threshold=0.95):
     return apply_pca(df, feature_columns, n_components)
 
 def save_processed_data(df, output_dir=None):
-
     if output_dir is None:
         output_dir = PROCESSED_DATA_DIR
     
