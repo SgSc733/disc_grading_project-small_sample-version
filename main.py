@@ -149,18 +149,14 @@ def main():
     
     print(f"\n执行特征标准化 (方法: {STANDARDIZATION_METHOD})...")
 
-    # 识别所有临床指标列，即使它们是数值型的
     clinical_cols = [col for col in CLINICAL_COLUMNS_CANDIDATES if col in df_filtered.columns]
 
-    # 定义所有不应参与标准化的非特征列
     non_feature_cols = ['Sample_ID'] + clinical_cols
 
-    # feature_columns 现在只包含纯粹的影像组学特征
     feature_columns = [col for col in df_filtered.columns if col not in non_feature_cols and np.issubdtype(df_filtered[col].dtype, np.number)]
     
     df_standardized = df_filtered.copy()
 
-    # 选择标准化工具
     if STANDARDIZATION_METHOD == 'robust':
         from sklearn.preprocessing import RobustScaler
         scaler = RobustScaler()
@@ -171,7 +167,6 @@ def main():
         from sklearn.preprocessing import MinMaxScaler
         scaler = MinMaxScaler()
 
-    # 对所有识别出的特征列进行一次性标准化
     if feature_columns:
         print(f"  正在对 {len(feature_columns)} 个特征进行标准化...")
         df_standardized[feature_columns] = scaler.fit_transform(df_filtered[feature_columns])
