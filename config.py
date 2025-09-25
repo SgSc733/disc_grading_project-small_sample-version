@@ -10,7 +10,7 @@ RESULTS_DIR = os.path.join(PROJECT_ROOT, 'results')
 FIGURES_DIR = os.path.join(RESULTS_DIR, 'figures')
 TABLES_DIR = os.path.join(RESULTS_DIR, 'tables')
 
-for dir_path in [RAW_DATA_DIR, PROCESSED_DATA_DIR, FIGURES_DIR, TABLES_DIR]:
+for dir_path in [RAW_DATA_DIR, FIGURES_DIR, TABLES_DIR]:
     os.makedirs(dir_path, exist_ok=True)
 
 STANDARDIZATION_METHOD = 'robust'  
@@ -34,3 +34,5 @@ NEW_GRADES_FILE = 'new_grades.csv'
 GRADE_INTERPRETATION_FILE = 'grade_interpretation.csv'
 PCA_SCATTER_FILE = 'pca_scatter_plot.png'
 DENDROGRAM_FILE = 'dendrogram.png'
+
+CLINICAL_COLUMNS_CANDIDATES = ['Pain_Score', 'ODI_Score', 'VAS_Score', 'JOA_Score']
