@@ -24,10 +24,6 @@ def load_and_filter_features(raw_features_path, robust_features_list_path, clini
     
     df_raw = df_raw.rename(columns={id_col_name: 'Sample_ID'})
     
-    if 'Disc_Level' not in df_raw.columns:
-        df_raw['Disc_Level'] = 'L4-L5'
-        print(f"  - 添加默认Disc_Level列（用于兼容）")
-
     print(f"  - 正在加载稳健特征清单: {os.path.basename(robust_features_list_path)}")
     df_robust_list = pd.read_csv(robust_features_list_path)
 
@@ -36,7 +32,7 @@ def load_and_filter_features(raw_features_path, robust_features_list_path, clini
     
     robust_feature_names = df_robust_list['feature'].tolist()
     
-    final_columns_to_keep = ['Sample_ID', 'Disc_Level']
+    final_columns_to_keep = ['Sample_ID'] 
     
     missing_features = []
     found_features = []
@@ -185,7 +181,7 @@ def apply_pca(df, feature_columns, n_components=2):
     pca_columns = [f'PC{i+1}' for i in range(n_components)]
     pca_df = pd.DataFrame(pca_features, columns=pca_columns, index=df.index)
     
-    result_df = pd.concat([df[['Sample_ID', 'Disc_Level']], pca_df], axis=1)
+    result_df = pd.concat([df[['Sample_ID']], pca_df], axis=1)
     
     return result_df, pca
 
