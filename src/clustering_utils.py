@@ -52,7 +52,7 @@ def plot_dendrogram(linkage_matrix, labels=None, save_path=None, n_clusters=None
     
     if save_path:
         plt.savefig(save_path, dpi=FIGURE_DPI, bbox_inches='tight')
-        print(f"Dendrogram saved to: {save_path}")
+        print(f"树状图已保存到: {save_path}")
     
     plt.close()
 
@@ -162,19 +162,7 @@ def rank_clusters_by_distance(centers, reference_point=None):
 
 def rank_clusters_clinically(df_with_clusters_and_clinical, cluster_col='Cluster', 
                             clinical_col='Pain_Score', use_clinical=True):
-    """
-    根据临床评分或PC1位置对聚类进行排序。
 
-    Args:
-        df_with_clusters_and_clinical (pd.DataFrame): 包含聚类标签的DataFrame。
-        cluster_col (str): 聚类标签所在的列名。
-        clinical_col (str): 用于排序的临床指标列名。
-        use_clinical (bool): 是否尝试使用临床数据排序。
-
-    Returns:
-        dict: 聚类标签到等级的映射。
-        pd.DataFrame: 每个聚类的统计数据（如果使用临床数据）。
-    """
     from scipy import stats
     
     if use_clinical and clinical_col in df_with_clusters_and_clinical.columns:
@@ -373,13 +361,14 @@ def generate_grade_interpretation(df, feature_columns, grades):
     interpretation_df = pd.DataFrame(interpretation_data)
     return interpretation_df
 
-def save_grading_results(df, grades, grade_mapping, output_dir=None):
+def save_grading_results(df_with_grades, original_clusters, output_dir=None):
     if output_dir is None:
         output_dir = TABLES_DIR
-    
-    results_df = df[['Sample_ID', 'Disc_Level']].copy()
-    results_df['Cluster'] = grades
-    results_df['Grade'] = [grade_mapping[cluster] for cluster in grades]
+
+    results_df = df_with_grades[['Sample_ID', 'Grade']].copy()
+    results_df['Cluster'] = original_clusters 
+
+    results_df = results_df[['Sample_ID', 'Cluster', 'Grade']]
     
     output_path = os.path.join(output_dir, NEW_GRADES_FILE)
     results_df.to_csv(output_path, index=False)
