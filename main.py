@@ -141,65 +141,43 @@ def main():
         if args.use_clinical:
             print(f"将使用 '{args.clinical_col}' 进行临床验证和排序")
     
-    print(f"\n椎间盘水平分布:")
-    print(df['Disc_Level'].value_counts())
     
     print("\n[步骤2] 数据预处理")
     
-    unique_disc_levels = df['Disc_Level'].unique()
-    group_by_disc = False
-
-    if len(unique_disc_levels) > 1:
-        print("是否按椎间盘水平分别处理? (y/n): ", end='')
-        group_by_disc = input().strip().lower() == 'y'
-        
-        if group_by_disc:
-            print(f"可用的椎间盘水平: {unique_disc_levels.tolist()}")
-            print("请输入要处理的椎间盘水平 (例如: L4-L5): ", end='')
-            selected_disc = input().strip()
-            
-            if selected_disc not in df['Disc_Level'].values:
-                print(f"错误: 未找到椎间盘水平 '{selected_disc}'")
-                return
-            
-            df_filtered = df[df['Disc_Level'] == selected_disc].copy()
-            print(f"已选择 {selected_disc}，包含 {len(df_filtered)} 个样本")
-        else:
-            df_filtered = df.copy()
-            print("处理所有椎间盘水平的数据")
-    else:
-        df_filtered = df.copy()
-        print(f"处理所有样本数据 (共 {len(df_filtered)} 个样本)")
+    df_filtered = df.copy()
+    print(f"处理所有样本数据 (共 {len(df_filtered)} 个样本)")
     
-    print(f"\n执行多视角特征标准化 (方法: {STANDARDIZATION_METHOD})...")
+    print(f"\n执行特征标准化 (方法: {STANDARDIZATION_METHOD})...")
 
-    non_feature_cols = ['Sample_ID', 'Disc_Level', 'Patient_ID']
-    feature_columns = [col for col in df_filtered.columns if col not in non_feature_cols]
+    # 识别所有临床指标列，即使它们是数值型的
+    clinical_cols = [col for col in CLINICAL_COLUMNS_CANDIDATES if col in df_filtered.columns]
 
-    from src.data_utils import group_features_by_type
-    feature_groups = group_features_by_type(feature_columns)
+    # 定义所有不应参与标准化的非特征列
+    non_feature_cols = ['Sample_ID'] + clinical_cols
 
+    # feature_columns 现在只包含纯粹的影像组学特征
+    feature_columns = [col for col in df_filtered.columns if col not in non_feature_cols and np.issubdtype(df_filtered[col].dtype, np.number)]
+    
     df_standardized = df_filtered.copy()
-    scalers = {}
 
-    for group_name, group_features in feature_groups.items():
-        if group_name != 'all' and len(group_features) > 0:
-            print(f"  标准化 {group_name} 特征组 ({len(group_features)} 个特征)")
-            
-            if STANDARDIZATION_METHOD == 'robust':
-                from sklearn.preprocessing import RobustScaler
-                scaler = RobustScaler()
-            elif STANDARDIZATION_METHOD == 'zscore':
-                from sklearn.preprocessing import StandardScaler
-                scaler = StandardScaler()
-            else:
-                from sklearn.preprocessing import MinMaxScaler
-                scaler = MinMaxScaler()
-                
-            df_standardized[group_features] = scaler.fit_transform(df_filtered[group_features])
-            scalers[group_name] = scaler
+    # 选择标准化工具
+    if STANDARDIZATION_METHOD == 'robust':
+        from sklearn.preprocessing import RobustScaler
+        scaler = RobustScaler()
+    elif STANDARDIZATION_METHOD == 'zscore':
+        from sklearn.preprocessing import StandardScaler
+        scaler = StandardScaler()
+    else:
+        from sklearn.preprocessing import MinMaxScaler
+        scaler = MinMaxScaler()
 
-    print(f"已完成多视角标准化，共处理 {len(feature_columns)} 个特征")
+    # 对所有识别出的特征列进行一次性标准化
+    if feature_columns:
+        print(f"  正在对 {len(feature_columns)} 个特征进行标准化...")
+        df_standardized[feature_columns] = scaler.fit_transform(df_filtered[feature_columns])
+        print("  标准化完成。")
+    else:
+        print("  警告：未找到可进行标准化的数值型特征。")
     
     print(f"\n[步骤3] PCA降维 (降至 {PCA_N_COMPONENTS} 维)")
     df_pca, pca_model = apply_pca(
@@ -211,9 +189,7 @@ def main():
     variance_ratio = pca_model.explained_variance_ratio_
     cumsum_ratio = np.cumsum(variance_ratio)
     print(f"各主成分方差贡献率: {variance_ratio}")
-    print(f"累积方差贡献率: {cumsum_ratio}")
     
-    save_processed_data(df_pca)
     
     print(f"\n[步骤4] 层次聚类 (方法: {CLUSTERING_METHOD}, 距离: {CLUSTERING_METRIC})")
         
@@ -246,7 +222,6 @@ def main():
             plot=True
         )
         n_clusters_to_use = optimal_clusters
-        print(f"\n自动确定的聚类数量: {n_clusters_to_use}")
             
     else:
         print(f"\n默认聚类数量: {N_CLUSTERS}")
@@ -294,8 +269,7 @@ def main():
     
     from src.clustering_utils import rank_clusters_clinically
     
-    clinical_columns = ['Pain_Score', 'ODI_Score', 'VAS_Score', 'JOA_Score']
-    available_clinical = [col for col in clinical_columns if col in df_with_clusters.columns]
+    available_clinical = [col for col in CLINICAL_COLUMNS_CANDIDATES if col in df_with_clusters.columns]
     
     if available_clinical and args.use_clinical:
         clinical_col_to_use = args.clinical_col if args.clinical_col in available_clinical else available_clinical[0]
@@ -324,11 +298,15 @@ def main():
     print("\n[步骤8] 生成可视化结果")
     
     pca_scatter_path = os.path.join(FIGURES_DIR, PCA_SCATTER_FILE)
-    plot_pca_scatter(df_pca, grades, save_path=pca_scatter_path)
+
+    actual_pca_scatter_path = plot_pca_scatter(df_pca, grades, save_path=pca_scatter_path)
+    if actual_pca_scatter_path is None:
+        actual_pca_scatter_path = "未生成 (PCA维度不足)"
     
     print("\n[步骤9] 保存分级结果")
-    
-    results_df = save_grading_results(df_pca, clusters, grade_mapping)
+
+    df_with_clusters['Grade'] = grades
+    results_df = save_grading_results(df_with_clusters, clusters)
     
     if len(feature_columns) > 0:
         interpretation_df = generate_grade_interpretation(
@@ -350,16 +328,13 @@ def main():
 1. 数据概览
    - 总样本数: {len(df_filtered)}
    - 特征数: {len(feature_columns)}
-   - 椎间盘水平: {df_filtered['Disc_Level'].unique().tolist()}
 
 2. 预处理参数
    - 标准化方法: {STANDARDIZATION_METHOD}
-   - 处理的椎间盘水平: {'所有' if not group_by_disc else selected_disc}
 
 3. PCA降维结果
    - 降维后维度: {PCA_N_COMPONENTS}
    - 各主成分方差贡献率: {variance_ratio}
-   - 累积方差贡献率: {cumsum_ratio}
 
 4. 聚类参数
    - 聚类方法: {CLUSTERING_METHOD}
@@ -384,7 +359,7 @@ def main():
    - 分级结果: {os.path.join(TABLES_DIR, NEW_GRADES_FILE)}
    - 等级解释: {os.path.join(TABLES_DIR, GRADE_INTERPRETATION_FILE)}
    - 树状图: {dendrogram_path}
-   - PCA散点图: {pca_scatter_path}
+   - PCA散点图: {actual_pca_scatter_path}
 
 {'=' * 50}
 分析完成时间: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}
@@ -394,21 +369,6 @@ def main():
     with open(report_path, 'w', encoding='utf-8') as f:
         f.write(report_content)
     print(f"分析报告已保存到: {report_path}")
-    
-    params = {
-        'standardization_method': STANDARDIZATION_METHOD,
-        'pca_n_components': PCA_N_COMPONENTS,
-        'clustering_method': CLUSTERING_METHOD,
-        'clustering_metric': CLUSTERING_METRIC,
-        'n_clusters': N_CLUSTERS,
-        'processed_disc_level': 'all' if not group_by_disc else selected_disc,
-        'timestamp': pd.Timestamp.now().isoformat()
-    }
-    
-    params_path = os.path.join(RESULTS_DIR, 'analysis_parameters.json')
-    with open(params_path, 'w') as f:
-        json.dump(params, f, indent=4)
-    print(f"分析参数已保存到: {params_path}")
     
     print("\n" + "=" * 80)
     print("分级系统设计完成！")
