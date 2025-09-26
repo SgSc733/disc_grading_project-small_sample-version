@@ -320,3 +320,16 @@
 
 *   `CLINICAL_COLUMNS_CANDIDATES = ['Pain_Score', 'ODI_Score', 'VAS_Score', 'JOA_Score']`: 一个候选列表，程序会用这个列表中的列名去临床数据文件中匹配可用的临床指标。当启用临床排序但未通过命令行指定 `--clinical-col` 时，程序会使用在此列表中找到的第一个可用列进行排序。
 
+## 7\. 参考文献
+[1]Soydan Z, Bayramoglu E, Urut DU, Iplikcioglu AC, Sen C. Tracing the disc: The novel qualitative morphometric MRI based disc degeneration classification system. JOR Spine. 2024 Mar 18;7(1):e1321.
+
+[2]McSweeney T, Tiulpin A, Kowlagi N, Määttä J, Karppinen J, Saarakkala S. Robust Radiomic Signatures of Intervertebral Disc Degeneration from MRI. Spine (Phila Pa 1976). 2025 Jun 20.
+
+[3]Y. Gao, C. Cui, W. Zhang, and D. Han, Extended alternating structure-adapted proximal gradient algorithm for nonconvex nonsmooth problems, June 2024, arXiv:2406.17226.
+
+[4]Perry, Ronan, et al. "mvlearn: Multiview Machine Learning in Python." Journal of Machine Learning Research 22.109 (2021): 1-7.
+
+[5]R. Farias, J. Cohen, and P. Comon. Exploring multimodal data fusion through joint decompositions with flexible couplings. IEEE TSP, 64(18): 4830-4844, 2016.
+
+[6]M. Nikolova and P. Tan. Alternating structure-adapted proximal gradient descent for nonconvex nonsmooth block-regularized problems. SIAM Journal on Optimization, 29(3): 2053–2078, 2019.
+
