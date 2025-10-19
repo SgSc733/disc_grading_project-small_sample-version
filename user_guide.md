@@ -271,7 +271,7 @@
 *   **文件**: `results/tables/grade_interpretation.csv`**
 *   **分析**:
     1.  **打开 `grade_interpretation.csv`**: 用Excel打开此文件，它展示了每个新等级在**关键影像组学特征**上的中位数。
-    2.  **寻找趋势**: 观察关键特征（如 `shape_Sphericity`）的中位数值，是否随着 `New_Grade` 的递增或递减呈现出单调趋势。
+    2.  **寻找趋势**: 观察每个特征的中位数值，是否随着 New_Grade 的递增或递减呈现出单调趋势。
     3.  **撰写标准**: 结合临床和影像学趋势，形成新的分级标准。例如：
 
 | 新等级 | 临床表现 (来自命令行) | 影像组学特征描述 (来自CSV) | 可能的形态学解释 |
@@ -332,4 +332,5 @@
 [5]R. Farias, J. Cohen, and P. Comon. Exploring multimodal data fusion through joint decompositions with flexible couplings. IEEE TSP, 64(18): 4830-4844, 2016.
 
 [6]M. Nikolova and P. Tan. Alternating structure-adapted proximal gradient descent for nonconvex nonsmooth block-regularized problems. SIAM Journal on Optimization, 29(3): 2053–2078, 2019.
+
 
